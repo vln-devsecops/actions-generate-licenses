@@ -82,7 +82,7 @@ jobs:
             
             ```yaml
             - name: Generate Open Source Licenses
-              uses: VlinderSoftware/generate-licenses@${{ steps.version.outputs.patch-tag }}
+              uses: vln-devsecops/actions-generate-licenses@${{ steps.version.outputs.patch-tag }}
               with:
                 working-directory: 'frontend'
                 node-version: '22'
@@ -92,7 +92,7 @@ jobs:
             
             ```yaml
             - name: Generate Open Source Licenses
-              uses: VlinderSoftware/generate-licenses@v1
+              uses: vln-devsecops/actions-generate-licenses@v1
               with:
                 working-directory: 'frontend'
                 node-version: '22'
