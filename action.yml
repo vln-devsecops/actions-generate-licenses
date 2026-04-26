@@ -30,7 +30,7 @@ runs:
   using: 'composite'
   steps:
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: ${{ inputs.node-version }}
 
@@ -55,7 +55,7 @@ runs:
 
     - name: Restore cached license files
       id: cache-licenses
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ${{ inputs.working-directory }}/licenses/texts
         key: licenses-${{ steps.cache-key.outputs.csv-hash }}

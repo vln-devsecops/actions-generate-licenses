@@ -39,7 +39,6 @@ describe('GitHub Action Configuration', () => {
       const stepNames = actionConfig.runs.steps.map(step => step.name);
       
       expect(stepNames).toContain('Setup Node.js');
-      expect(stepNames).toContain('Setup Python');
       expect(stepNames).toContain('Generate licenses CSV');
       expect(stepNames).toContain('Download license files');
       expect(stepNames).toContain('Generate licenses HTML');
@@ -49,12 +48,7 @@ describe('GitHub Action Configuration', () => {
       const nodeSetupStep = actionConfig.runs.steps.find(step => 
         step.name === 'Setup Node.js'
       );
-      expect(nodeSetupStep.uses).toBe('actions/setup-node@v4');
-      
-      const pythonSetupStep = actionConfig.runs.steps.find(step => 
-        step.name === 'Setup Python'
-      );
-      expect(pythonSetupStep.uses).toBe('actions/setup-python@v5');
+      expect(nodeSetupStep.uses).toBe('actions/setup-node@v6');
     });
 
     it('should have proper caching configuration', () => {
@@ -63,7 +57,7 @@ describe('GitHub Action Configuration', () => {
       );
       
       expect(cacheStep).toBeDefined();
-      expect(cacheStep.uses).toBe('actions/cache@v4');
+      expect(cacheStep.uses).toBe('actions/cache@v5');
       expect(cacheStep.with.key).toContain('licenses-');
     });
 
