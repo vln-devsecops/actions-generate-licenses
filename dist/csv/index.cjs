@@ -1286,6 +1286,22 @@ function charFromCodepoint(c) {
   );
 }
 
+// set a property of a literal object, while protecting against prototype pollution,
+// see https://github.com/nodeca/js-yaml/issues/164 for more details
+function setProperty(object, key, value) {
+  // used for this specific key only because Object.defineProperty is slow
+  if (key === '__proto__') {
+    Object.defineProperty(object, key, {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: value
+    });
+  } else {
+    object[key] = value;
+  }
+}
+
 var simpleEscapeCheck = new Array(256); // integer, for fast access
 var simpleEscapeMap = new Array(256);
 for (var i = 0; i < 256; i++) {
@@ -1464,7 +1480,7 @@ function mergeMappings(state, destination, source, overridableKeys) {
     key = sourceKeys[index];
 
     if (!_hasOwnProperty.call(destination, key)) {
-      destination[key] = source[key];
+      setProperty(destination, key, source[key]);
       overridableKeys[key] = true;
     }
   }
@@ -1524,17 +1540,7 @@ function storeMappingPair(state, _result, overridableKeys, keyTag, keyNode, valu
       throwError(state, 'duplicated mapping key');
     }
 
-    // used for this specific key only because Object.defineProperty is slow
-    if (keyNode === '__proto__') {
-      Object.defineProperty(_result, keyNode, {
-        configurable: true,
-        enumerable: true,
-        writable: true,
-        value: valueNode
-      });
-    } else {
-      _result[keyNode] = valueNode;
-    }
+    setProperty(_result, keyNode, valueNode);
     delete overridableKeys[keyNode];
   }
 
@@ -4132,6 +4138,380 @@ module.exports = require("fs");
 "use strict";
 module.exports = require("path");
 
+/***/ }),
+
+/***/ 863:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+/* module decorator */ module = __nccwpck_require__.nmd(module);
+
+/**
+ * Generate a CSV file of all npm dependencies with their licenses
+ * Output format: name,version,license,licenseUrl,overrideUrl
+ */
+
+const fs = __nccwpck_require__(896);
+const path = __nccwpck_require__(928);
+const { execSync } = __nccwpck_require__(317);
+const yaml = __nccwpck_require__(281);
+
+function getPaths(cwd = process.cwd()) {
+  const outputCsv = path.join(cwd, 'licenses/licenses.csv');
+  return {
+    cwd,
+    outputCsv,
+    outputDir: path.dirname(outputCsv),
+  };
+}
+
+function findOverridesFile(cwd = process.cwd(), fsImpl = fs) {
+  const possiblePaths = [
+    path.join(cwd, 'license-overrides.yml'),
+    path.join(cwd, '.github/license-overrides.yml'),
+    path.join(cwd, 'licenses/overrides.yml'),
+  ];
+
+  for (const filePath of possiblePaths) {
+    if (fsImpl.existsSync(filePath)) {
+      return filePath;
+    }
+  }
+
+  return null;
+}
+
+function loadOverrides(cwd = process.cwd(), options = {}) {
+  const {
+    fsImpl = fs,
+    yamlImpl = yaml,
+    logger = console,
+  } = options;
+  const overridesFile = findOverridesFile(cwd, fsImpl);
+  let overrides = {};
+
+  if (overridesFile && fsImpl.existsSync(overridesFile)) {
+    try {
+      const overridesContent = fsImpl.readFileSync(overridesFile, 'utf8');
+      const overridesData = yamlImpl.load(overridesContent);
+      if (overridesData && overridesData.overrides) {
+        overrides = overridesData.overrides;
+        logger.log(`Loaded ${Object.keys(overrides).length} license override(s) from ${overridesFile}`);
+      }
+    } catch (err) {
+      logger.warn(`Warning: Failed to load license overrides: ${err.message}`);
+    }
+  } else {
+    logger.log('No license overrides file found. Checked locations:');
+    logger.log('  - license-overrides.yml (working directory)');
+    logger.log('  - .github/license-overrides.yml (working directory)');
+    logger.log('  - licenses/overrides.yml (working directory)');
+  }
+
+  return { overrides, overridesFile };
+}
+
+function ensureOutputDir(outputDir, fsImpl = fs) {
+  if (!fsImpl.existsSync(outputDir)) {
+    fsImpl.mkdirSync(outputDir, { recursive: true });
+  }
+}
+
+function getProductionDependencies(cwd = process.cwd(), options = {}) {
+  const {
+    fsImpl = fs,
+    logger = console,
+  } = options;
+  const productionDeps = new Set();
+
+  try {
+    const packageJsonPath = path.join(cwd, 'package.json');
+    const packageJson = JSON.parse(fsImpl.readFileSync(packageJsonPath, 'utf8'));
+    for (const dep of Object.keys(packageJson.dependencies || {})) {
+      productionDeps.add(dep);
+    }
+    logger.log(`Production-only mode: filtering to ${productionDeps.size} direct production dependencies`);
+  } catch (err) {
+    logger.warn('Warning: Could not read package.json for production-only mode, falling back to full scan');
+  }
+
+  return productionDeps;
+}
+
+function getLicenseUrl(name, version, info) {
+  if (info.resolved) {
+    return `https://www.npmjs.com/package/${name}/v/${version}`;
+  }
+
+  if (info.repository) {
+    if (typeof info.repository === 'string') {
+      return info.repository;
+    }
+
+    if (info.repository.url) {
+      return info.repository.url.replace(/^git\+/, '').replace(/\.git$/, '');
+    }
+  }
+
+  return '';
+}
+
+function extractPackages(deps, options = {}) {
+  const {
+    packages = new Map(),
+    overrides = {},
+    allowedTopLevel = null,
+  } = options;
+
+  if (!deps) {
+    return packages;
+  }
+
+  for (const [name, info] of Object.entries(deps)) {
+    if (allowedTopLevel && !allowedTopLevel.has(name)) {
+      continue;
+    }
+
+    const version = info.version;
+    const key = `${name}@${version}`;
+
+    if (!packages.has(key)) {
+      let license = info.license || 'UNKNOWN';
+      let licenseUrl = '';
+      let overrideUrl = '';
+
+      if (overrides[key]) {
+        const override = overrides[key];
+        if (override.license) {
+          license = override.license;
+        }
+        if (override.licenseUrl) {
+          licenseUrl = override.licenseUrl;
+          overrideUrl = override.licenseUrl;
+        }
+      }
+
+      if (!licenseUrl) {
+        licenseUrl = getLicenseUrl(name, version, info);
+      }
+
+      packages.set(key, {
+        name,
+        version,
+        license,
+        licenseUrl,
+        overrideUrl,
+      });
+    }
+
+    if (info.dependencies) {
+      extractPackages(info.dependencies, {
+        packages,
+        overrides,
+        allowedTopLevel: null,
+      });
+    }
+  }
+
+  return packages;
+}
+
+function escapeCsv(str) {
+  if (!str) {
+    return '';
+  }
+
+  const strValue = String(str);
+  if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n')) {
+    return `"${strValue.replace(/"/g, '""')}"`;
+  }
+
+  return strValue;
+}
+
+function generateCsvContent(sortedPackages) {
+  const csvLines = ['name,version,license,licenseUrl,overrideUrl'];
+
+  for (const pkg of sortedPackages) {
+    csvLines.push(
+      `${escapeCsv(pkg.name)},${escapeCsv(pkg.version)},${escapeCsv(pkg.license)},${escapeCsv(pkg.licenseUrl)},${escapeCsv(pkg.overrideUrl)}`
+    );
+  }
+
+  return csvLines.join('\n');
+}
+
+function analyzePackages(sortedPackages) {
+  const licenseCounts = new Map();
+  const copyleftLicenses = [];
+  const unknownLicenses = [];
+
+  for (const pkg of sortedPackages) {
+    const license = pkg.license;
+    licenseCounts.set(license, (licenseCounts.get(license) || 0) + 1);
+
+    if (license === 'UNKNOWN' || license === '' || !license) {
+      unknownLicenses.push({ name: pkg.name, version: pkg.version, license: license || 'UNKNOWN' });
+    }
+
+    const copyleftPatterns = /GPL|AGPL|LGPL|MPL|EPL|CDDL|CPL/i;
+    if (copyleftPatterns.test(license)) {
+      copyleftLicenses.push({ name: pkg.name, version: pkg.version, license });
+    }
+  }
+
+  return {
+    licenseCounts: Array.from(licenseCounts.entries()).sort((a, b) => b[1] - a[1]),
+    copyleftLicenses,
+    unknownLicenses,
+  };
+}
+
+function run(options = {}) {
+  const cwd = options.cwd || process.cwd();
+  const env = options.env || process.env;
+  const execSyncImpl = options.execSyncImpl || execSync;
+  const fsImpl = options.fsImpl || fs;
+  const logger = options.logger || console;
+  const yamlImpl = options.yamlImpl || yaml;
+  const { outputCsv, outputDir } = getPaths(cwd);
+
+  ensureOutputDir(outputDir, fsImpl);
+  const { overrides, overridesFile } = loadOverrides(cwd, { fsImpl, yamlImpl, logger });
+
+  logger.log('Generating licenses CSV...');
+  logger.log(`DEBUG: PRODUCTION_ONLY environment variable = "${env.PRODUCTION_ONLY}"`);
+
+  let productionDeps = new Set();
+  if (env.PRODUCTION_ONLY === 'true') {
+    productionDeps = getProductionDependencies(cwd, { fsImpl, logger });
+  }
+
+  let npmList;
+  try {
+    npmList = execSyncImpl('npm list --json --all --long --omit=peer', {
+      cwd,
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+    });
+  } catch (err) {
+    if (err.stdout) {
+      npmList = err.stdout;
+    } else {
+      throw err;
+    }
+  }
+
+  const dependencies = JSON.parse(npmList);
+  const packages = new Map();
+
+  if (dependencies.dependencies) {
+    if (env.PRODUCTION_ONLY === 'true' && productionDeps.size > 0) {
+      logger.log('Production-only mode: filtering dependency tree...');
+      extractPackages(dependencies.dependencies, {
+        packages,
+        overrides,
+        allowedTopLevel: productionDeps,
+      });
+    } else {
+      extractPackages(dependencies.dependencies, { packages, overrides });
+    }
+  }
+
+  const sortedPackages = Array.from(packages.values()).sort((a, b) => a.name.localeCompare(b.name));
+  const csvContent = generateCsvContent(sortedPackages);
+  fsImpl.writeFileSync(outputCsv, csvContent, 'utf8');
+
+  logger.log(`✓ Generated licenses CSV with ${sortedPackages.length} packages`);
+  logger.log(`  Output: ${outputCsv}`);
+
+  const { licenseCounts, copyleftLicenses, unknownLicenses } = analyzePackages(sortedPackages);
+
+  logger.log('\n📊 License Summary:');
+  logger.log('===================');
+  for (const [license, count] of licenseCounts) {
+    logger.log(`  ${license}: ${count}`);
+  }
+
+  let shouldFail = false;
+
+  if (unknownLicenses.length > 0) {
+    logger.log('\n⚠️  UNKNOWN LICENSES DETECTED:');
+    logger.log('===============================');
+    for (const pkg of unknownLicenses) {
+      logger.log(`  - ${pkg.name}@${pkg.version}: ${pkg.license}`);
+    }
+    logger.log('\nPlease add license information for these packages to license overrides.');
+
+    if (env.FAIL_ON_UNKNOWN === 'true') {
+      logger.error('\n❌ Build will fail due to unknown licenses detected.');
+      shouldFail = true;
+    }
+  } else {
+    logger.log('\n✓ No unknown licenses detected.');
+  }
+
+  if (copyleftLicenses.length > 0) {
+    logger.log('\n⚠️  COPYLEFT LICENSES DETECTED:');
+    logger.log('================================');
+    for (const pkg of copyleftLicenses) {
+      logger.log(`  - ${pkg.name}@${pkg.version}: ${pkg.license}`);
+    }
+    logger.log('\nPlease review these licenses carefully to ensure compliance.');
+
+    if (env.FAIL_ON_COPYLEFT === 'true') {
+      logger.error('\n❌ Build will fail due to copyleft licenses detected.');
+      shouldFail = true;
+    }
+  } else {
+    logger.log('\n✓ No copyleft licenses detected.');
+  }
+
+  if (shouldFail) {
+    logger.error('\n❌ Build failed due to license policy violations.');
+    logger.error('   Either remove these dependencies or add them to license overrides.');
+  }
+
+  return {
+    sortedPackages,
+    outputCsv,
+    overridesFile,
+    licenseCounts,
+    unknownLicenses,
+    copyleftLicenses,
+    shouldFail,
+  };
+}
+
+function main() {
+  try {
+    const result = run();
+    if (result.shouldFail) {
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error('Error:', error.message);
+    process.exit(1);
+  }
+}
+
+if (__nccwpck_require__.c[__nccwpck_require__.s] === module) {
+  main();
+}
+
+module.exports = {
+  analyzePackages,
+  escapeCsv,
+  extractPackages,
+  findOverridesFile,
+  generateCsvContent,
+  getLicenseUrl,
+  getPaths,
+  loadOverrides,
+  main,
+  run,
+};
+
+
 /***/ })
 
 /******/ 	});
@@ -4148,8 +4528,8 @@ module.exports = require("path");
 /******/ 		}
 /******/ 		// Create a new module (and put it into the cache)
 /******/ 		var module = __webpack_module_cache__[moduleId] = {
-/******/ 			// no module.id needed
-/******/ 			// no module.loaded needed
+/******/ 			id: moduleId,
+/******/ 			loaded: false,
 /******/ 			exports: {}
 /******/ 		};
 /******/ 	
@@ -4162,306 +4542,37 @@ module.exports = require("path");
 /******/ 			if(threw) delete __webpack_module_cache__[moduleId];
 /******/ 		}
 /******/ 	
+/******/ 		// Flag the module as loaded
+/******/ 		module.loaded = true;
+/******/ 	
 /******/ 		// Return the exports of the module
 /******/ 		return module.exports;
 /******/ 	}
 /******/ 	
+/******/ 	// expose the module cache
+/******/ 	__nccwpck_require__.c = __webpack_module_cache__;
+/******/ 	
 /************************************************************************/
+/******/ 	/* webpack/runtime/node module decorator */
+/******/ 	(() => {
+/******/ 		__nccwpck_require__.nmd = (module) => {
+/******/ 			module.paths = [];
+/******/ 			if (!module.children) module.children = [];
+/******/ 			return module;
+/******/ 		};
+/******/ 	})();
+/******/ 	
 /******/ 	/* webpack/runtime/compat */
 /******/ 	
 /******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
 /******/ 	
 /************************************************************************/
-var __webpack_exports__ = {};
-
-/**
- * Generate a CSV file of all npm dependencies with their licenses
- * Output format: name,version,license,licenseUrl,overrideUrl
- */
-
-const fs = __nccwpck_require__(896);
-const path = __nccwpck_require__(928);
-const { execSync } = __nccwpck_require__(317);
-const yaml = __nccwpck_require__(281);
-
-const OUTPUT_CSV = path.join(process.cwd(), 'licenses/licenses.csv');
-const OUTPUT_DIR = path.dirname(OUTPUT_CSV);
-// Look for overrides file in multiple locations (most specific to least specific)
-const findOverridesFile = () => {
-  const possiblePaths = [
-    path.join(process.cwd(), 'license-overrides.yml'),           // Working directory
-    path.join(process.cwd(), '.github/license-overrides.yml'),  // Working directory .github
-    path.join(process.cwd(), 'licenses/overrides.yml'),         // Working directory licenses folder
-  ];
-  
-  for (const filePath of possiblePaths) {
-    if (fs.existsSync(filePath)) {
-      return filePath;
-    }
-  }
-  
-  return null;
-};
-
-const OVERRIDES_FILE = findOverridesFile();
-
-// Ensure output directory exists
-if (!fs.existsSync(OUTPUT_DIR)) {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-}
-
-// Load license overrides
-let overrides = {};
-if (OVERRIDES_FILE && fs.existsSync(OVERRIDES_FILE)) {
-  try {
-    const overridesContent = fs.readFileSync(OVERRIDES_FILE, 'utf8');
-    const overridesData = yaml.load(overridesContent);
-    if (overridesData && overridesData.overrides) {
-      overrides = overridesData.overrides;
-      console.log(`Loaded ${Object.keys(overrides).length} license override(s) from ${OVERRIDES_FILE}`);
-    }
-  } catch (err) {
-    console.warn(`Warning: Failed to load license overrides: ${err.message}`);
-  }
-} else {
-  console.log('No license overrides file found. Checked locations:');
-  console.log('  - license-overrides.yml (working directory)');
-  console.log('  - .github/license-overrides.yml (working directory)');
-  console.log('  - licenses/overrides.yml (working directory)');
-}
-
-console.log('Generating licenses CSV...');
-
-// Read package.json to determine production vs dev dependencies
-let packageJson = {};
-let productionDeps = new Set();
-console.log(`DEBUG: PRODUCTION_ONLY environment variable = "${process.env.PRODUCTION_ONLY}"`);
-if (process.env.PRODUCTION_ONLY === 'true') {
-  try {
-    const packageJsonPath = path.join(process.cwd(), 'package.json');
-    packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-    
-    // Collect all production dependencies (including nested ones)
-    const collectProductionDeps = (deps) => {
-      if (!deps) return;
-      for (const dep of Object.keys(deps)) {
-        productionDeps.add(dep);
-      }
-    };
-    
-    collectProductionDeps(packageJson.dependencies);
-    // Note: We intentionally don't add devDependencies to productionDeps
-    
-    console.log(`Production-only mode: filtering to ${productionDeps.size} direct production dependencies`);
-  } catch (err) {
-    console.warn('Warning: Could not read package.json for production-only mode, falling back to full scan');
-  }
-}
-
-// Get all dependencies including nested ones
-// Use --omit=peer to avoid peer dependency errors  
-let npmList;
-try {
-  npmList = execSync(`npm list --json --all --long --omit=peer`, {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-    maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-  });
-} catch (err) {
-  // npm list returns non-zero exit code even with valid output when there are warnings
-  // So we capture the output from the error
-  if (err.stdout) {
-    npmList = err.stdout;
-  } else {
-    throw err;
-  }
-}
-
-const dependencies = JSON.parse(npmList);
-
-// Map to store unique packages (name@version)
-const packages = new Map();
-
-function extractPackages(deps, prefix = '', allowedTopLevel = null) {
-  if (!deps) return;
-  
-  for (const [name, info] of Object.entries(deps)) {
-    // In production-only mode, skip top-level packages that aren't in the allowed set
-    if (allowedTopLevel && !allowedTopLevel.has(name)) {
-      continue;
-    }
-    
-    const version = info.version;
-    const key = `${name}@${version}`;
-    
-    if (!packages.has(key)) {
-      // Get license info
-      let license = info.license || 'UNKNOWN';
-      let licenseUrl = '';
-      let overrideUrl = '';
-      
-      // Check for override first
-      if (overrides[key]) {
-        const override = overrides[key];
-        if (override.license) {
-          license = override.license;
-          console.log(`  ✓ Applied override for ${key}: ${license}`);
-        }
-        if (override.licenseUrl) {
-          licenseUrl = override.licenseUrl;
-          overrideUrl = override.licenseUrl;
-        }
-      }
-      
-      // If no override URL, try to get repository URL from package
-      if (!licenseUrl) {
-        if (info.resolved) {
-          // For npm packages, construct a link to the package page
-          licenseUrl = `https://www.npmjs.com/package/${name}/v/${version}`;
-        } else if (info.repository) {
-          if (typeof info.repository === 'string') {
-            licenseUrl = info.repository;
-          } else if (info.repository.url) {
-            licenseUrl = info.repository.url.replace(/^git\+/, '').replace(/\.git$/, '');
-          }
-        }
-      }
-      
-      packages.set(key, {
-        name,
-        version,
-        license,
-        licenseUrl,
-        overrideUrl,
-      });
-    }
-    
-    // Recursively process dependencies
-    // For nested dependencies, don't filter - they're all needed at runtime
-    if (info.dependencies) {
-      extractPackages(info.dependencies, `${prefix}${name} > `, null);
-    }
-  }
-}
-
-// Extract packages from dependencies
-if (dependencies.dependencies) {
-  if (process.env.PRODUCTION_ONLY === 'true' && productionDeps.size > 0) {
-    // Only extract packages that are in the production dependency tree
-    console.log('Production-only mode: filtering dependency tree...');
-    extractPackages(dependencies.dependencies, '', productionDeps);
-  } else {
-    extractPackages(dependencies.dependencies, '', null);
-  }
-}
-
-// Convert to array and sort by name
-const sortedPackages = Array.from(packages.values()).sort((a, b) => 
-  a.name.localeCompare(b.name)
-);
-
-// Generate CSV
-const csvLines = ['name,version,license,licenseUrl,overrideUrl'];
-
-for (const pkg of sortedPackages) {
-  // Escape CSV fields if they contain commas or quotes
-  const escapeCsv = (str) => {
-    if (!str) return '';
-    const strValue = String(str);
-    if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n')) {
-      return `"${strValue.replace(/"/g, '""')}"`;
-    }
-    return strValue;
-  };
-  
-  csvLines.push(
-    `${escapeCsv(pkg.name)},${escapeCsv(pkg.version)},${escapeCsv(pkg.license)},${escapeCsv(pkg.licenseUrl)},${escapeCsv(pkg.overrideUrl)}`
-  );
-}
-
-const csvContent = csvLines.join('\n');
-
-// Write CSV file
-fs.writeFileSync(OUTPUT_CSV, csvContent, 'utf8');
-
-console.log(`✓ Generated licenses CSV with ${sortedPackages.length} packages`);
-console.log(`  Output: ${OUTPUT_CSV}`);
-
-// Generate a summary report
-const licenseCounts = new Map();
-const copyleftLicenses = [];
-const unknownLicenses = [];
-
-for (const pkg of sortedPackages) {
-  const license = pkg.license;
-  licenseCounts.set(license, (licenseCounts.get(license) || 0) + 1);
-  
-  // Check for unknown licenses
-  if (license === 'UNKNOWN' || license === '' || !license) {
-    unknownLicenses.push({ name: pkg.name, version: pkg.version, license: license || 'UNKNOWN' });
-  }
-  
-  // Check for copyleft licenses
-  const copyleftPatterns = /GPL|AGPL|LGPL|MPL|EPL|CDDL|CPL/i;
-  if (copyleftPatterns.test(license)) {
-    copyleftLicenses.push({ name: pkg.name, version: pkg.version, license });
-  }
-}
-
-// Sort licenses by count
-const sortedLicenses = Array.from(licenseCounts.entries())
-  .sort((a, b) => b[1] - a[1]);
-
-console.log('\n📊 License Summary:');
-console.log('===================');
-for (const [license, count] of sortedLicenses) {
-  console.log(`  ${license}: ${count}`);
-}
-
-// Track if we should fail the build
-let shouldFail = false;
-
-// Check for unknown licenses
-if (unknownLicenses.length > 0) {
-  console.log('\n⚠️  UNKNOWN LICENSES DETECTED:');
-  console.log('===============================');
-  for (const pkg of unknownLicenses) {
-    console.log(`  - ${pkg.name}@${pkg.version}: ${pkg.license}`);
-  }
-  console.log('\nPlease add license information for these packages to license overrides.');
-  
-  if (process.env.FAIL_ON_UNKNOWN === 'true') {
-    console.error('\n❌ Build will fail due to unknown licenses detected.');
-    shouldFail = true;
-  }
-} else {
-  console.log('\n✓ No unknown licenses detected.');
-}
-
-// Check for copyleft licenses
-if (copyleftLicenses.length > 0) {
-  console.log('\n⚠️  COPYLEFT LICENSES DETECTED:');
-  console.log('================================');
-  for (const pkg of copyleftLicenses) {
-    console.log(`  - ${pkg.name}@${pkg.version}: ${pkg.license}`);
-  }
-  console.log('\nPlease review these licenses carefully to ensure compliance.');
-  
-  if (process.env.FAIL_ON_COPYLEFT === 'true') {
-    console.error('\n❌ Build will fail due to copyleft licenses detected.');
-    shouldFail = true;
-  }
-} else {
-  console.log('\n✓ No copyleft licenses detected.');
-}
-
-// Exit with error if any failure conditions were met
-if (shouldFail) {
-  console.error('\n❌ Build failed due to license policy violations.');
-  console.error('   Either remove these dependencies or add them to license overrides.');
-  process.exit(1);
-}
-
-module.exports = __webpack_exports__;
+/******/ 	
+/******/ 	// module cache are used so entry inlining is disabled
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	var __webpack_exports__ = __nccwpck_require__(__nccwpck_require__.s = 863);
+/******/ 	module.exports = __webpack_exports__;
+/******/ 	
 /******/ })()
 ;

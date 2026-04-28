@@ -72,7 +72,7 @@ describe('License Generation Integration Tests', () => {
         expect(fs.existsSync(csvFile)).toBe(true);
         
         const csvContent = fs.readFileSync(csvFile, 'utf8');
-        expect(csvContent).toContain('Component Name,Version,License (SPDX ID),License URL');
+        expect(csvContent).toContain('name,version,license,licenseUrl,overrideUrl');
         expect(csvContent).toContain('escape-html');
       } catch (error) {
         console.error('CSV generation failed:', error.message);

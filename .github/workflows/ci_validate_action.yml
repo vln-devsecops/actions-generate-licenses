@@ -1,0 +1,58 @@
+name: Validate Action
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/v*'
+  pull_request:
+    branches:
+      - main
+      - 'release/v*'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate action.yml
+        run: |
+          if [ ! -f action.yml ]; then
+            echo "Error: action.yml not found"
+            exit 1
+          fi
+
+          python3 -c "import yaml; yaml.safe_load(open('action.yml'))"
+          echo "✓ action.yml is valid YAML"
+
+          if ! grep -q "name:" action.yml; then
+            echo "Error: action.yml missing 'name' field"
+            exit 1
+          fi
+
+          if ! grep -q "description:" action.yml; then
+            echo "Error: action.yml missing 'description' field"
+            exit 1
+          fi
+
+          echo "✓ action.yml has required fields"
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Verify dist is up to date
+        run: |
+          npm run build
+          git diff --exit-code -- dist

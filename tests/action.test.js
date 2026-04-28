@@ -4,85 +4,83 @@ const yaml = require('js-yaml');
 
 describe('GitHub Action Configuration', () => {
   let actionConfig;
-  
+
   beforeAll(() => {
     const actionPath = path.join(__dirname, '../action.yml');
-    const actionYaml = fs.readFileSync(actionPath, 'utf8');
-    actionConfig = yaml.load(actionYaml);
+    actionConfig = yaml.load(fs.readFileSync(actionPath, 'utf8'));
   });
 
-  describe('Action metadata', () => {
-    it('should have required metadata fields', () => {
-      expect(actionConfig.name).toBeDefined();
-      expect(actionConfig.description).toBeDefined();
-      expect(actionConfig.runs).toBeDefined();
-    });
+  it('declares the expected inputs and defaults', () => {
+    expect(actionConfig.name).toBeDefined();
+    expect(actionConfig.description).toBeDefined();
+    expect(actionConfig.runs.using).toBe('composite');
 
-    it('should be a composite action', () => {
-      expect(actionConfig.runs.using).toBe('composite');
-      expect(actionConfig.runs.steps).toBeDefined();
-      expect(Array.isArray(actionConfig.runs.steps)).toBe(true);
-    });
-
-    it('should have required inputs', () => {
-      expect(actionConfig.inputs).toBeDefined();
-      expect(actionConfig.inputs['working-directory']).toBeDefined();
-      expect(actionConfig.inputs['working-directory'].required).toBe(true);
-      
-      expect(actionConfig.inputs['node-version']).toBeDefined();
-      expect(actionConfig.inputs['node-version'].default).toBe('22');
-    });
+    expect(actionConfig.inputs['working-directory']).toEqual(
+      expect.objectContaining({ required: true })
+    );
+    expect(actionConfig.inputs['node-version']).toEqual(
+      expect.objectContaining({ default: '22' })
+    );
+    expect(actionConfig.inputs['fail-on-unknown']).toEqual(
+      expect.objectContaining({ default: 'false' })
+    );
+    expect(actionConfig.inputs['fail-on-copyleft']).toEqual(
+      expect.objectContaining({ default: 'false' })
+    );
+    expect(actionConfig.inputs['fail-on-missing-licenses']).toEqual(
+      expect.objectContaining({ default: 'true' })
+    );
   });
 
-  describe('Action steps', () => {
-    it('should have all required steps', () => {
-      const stepNames = actionConfig.runs.steps.map(step => step.name);
-      
-      expect(stepNames).toContain('Setup Node.js');
-      expect(stepNames).toContain('Generate licenses CSV');
-      expect(stepNames).toContain('Download license files');
-      expect(stepNames).toContain('Generate licenses HTML');
-    });
+  it('wires each script step to the bundled dist entry points', () => {
+    const stepsByName = Object.fromEntries(
+      actionConfig.runs.steps.map((step) => [step.name, step])
+    );
 
-    it('should use correct action versions', () => {
-      const nodeSetupStep = actionConfig.runs.steps.find(step => 
-        step.name === 'Setup Node.js'
-      );
-      expect(nodeSetupStep.uses).toBe('actions/setup-node@v6');
-    });
-
-    it('should have proper caching configuration', () => {
-      const cacheStep = actionConfig.runs.steps.find(step => 
-        step.name === 'Restore cached license files'
-      );
-      
-      expect(cacheStep).toBeDefined();
-      expect(cacheStep.uses).toBe('actions/cache@v5');
-      expect(cacheStep.with.key).toContain('licenses-');
-    });
-
-    it('should use shell bash for all script steps', () => {
-      const scriptSteps = actionConfig.runs.steps.filter(step => 
-        step.run && !step.uses
-      );
-      
-      scriptSteps.forEach(step => {
-        expect(step.shell).toBe('bash');
-      });
-    });
+    expect(stepsByName['Generate licenses CSV']).toEqual(
+      expect.objectContaining({
+        shell: 'bash',
+        run: 'node ${{ github.action_path }}/dist/csv/index.cjs',
+      })
+    );
+    expect(stepsByName['Download license files']).toEqual(
+      expect.objectContaining({
+        shell: 'bash',
+        run: 'node ${{ github.action_path }}/dist/download/index.cjs',
+      })
+    );
+    expect(stepsByName['Generate licenses HTML']).toEqual(
+      expect.objectContaining({
+        shell: 'bash',
+        run: 'node ${{ github.action_path }}/dist/html/index.cjs',
+      })
+    );
   });
 
-  describe('Input validation', () => {
-    it('should validate working-directory input', () => {
-      const workingDirInput = actionConfig.inputs['working-directory'];
-      expect(workingDirInput.description).toContain('package.json');
-      expect(workingDirInput.required).toBe(true);
-    });
+  it('passes the expected environment and caching configuration to action steps', () => {
+    const stepsByName = Object.fromEntries(
+      actionConfig.runs.steps.map((step) => [step.name, step])
+    );
 
-    it('should have sensible defaults', () => {
-      const nodeVersionInput = actionConfig.inputs['node-version'];
-      expect(nodeVersionInput.required).toBe(false);
-      expect(nodeVersionInput.default).toBe('22');
-    });
+    expect(stepsByName['Restore cached license files']).toEqual(
+      expect.objectContaining({
+        uses: 'actions/cache@v5',
+        with: expect.objectContaining({
+          key: 'licenses-${{ steps.cache-key.outputs.csv-hash }}',
+        }),
+      })
+    );
+    expect(stepsByName['Generate licenses CSV'].env).toEqual(
+      expect.objectContaining({
+        FAIL_ON_UNKNOWN: '${{ inputs.fail-on-unknown }}',
+        FAIL_ON_COPYLEFT: '${{ inputs.fail-on-copyleft }}',
+        PRODUCTION_ONLY: '${{ inputs.production-only }}',
+      })
+    );
+    expect(stepsByName['Download license files'].env).toEqual(
+      expect.objectContaining({
+        FAIL_ON_MISSING_LICENSES: '${{ inputs.fail-on-missing-licenses }}',
+      })
+    );
   });
 });
