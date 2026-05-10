@@ -153,4 +153,4 @@ The action uses GitHub Actions cache to store downloaded license files, with cac
 
 ## License
 
-This action is part of the DocXchange project and is subject to the same license terms.
+This action is part of the doxchange project and is subject to the same license terms.
