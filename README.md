@@ -150,7 +150,3 @@ All dependencies are bundled using `@vercel/ncc` for fast, reliable execution.
 ## Caching
 
 The action uses GitHub Actions cache to store downloaded license files, with cache keys based on the generated CSV content. This significantly speeds up subsequent runs when dependencies haven't changed.
-
-## License
-
-This action is part of the doxchange project and is subject to the same license terms.
