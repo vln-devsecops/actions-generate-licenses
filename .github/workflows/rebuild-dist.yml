@@ -78,8 +78,8 @@ jobs:
           - Triggered by: ${{ github.event_name }}
           - Actor: ${{ github.actor }}"
           
-          # Push to the current branch
-          git push origin HEAD:${{ github.ref_name }}
+          # Push to the current branch (use head_ref on PRs, ref_name on direct pushes)
+          git push origin HEAD:${{ github.head_ref || github.ref_name }}
 
       - name: Summary
         run: |
