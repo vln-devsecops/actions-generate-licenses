@@ -13,5 +13,6 @@ module.exports = {
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
-  testTimeout: 10000 // 10 second timeout
+  testTimeout: 10000, // 10 second timeout
+  maxWorkers: 1 // prevent ENOTEMPTY races on the shared tests/.workspaces directory
 };
