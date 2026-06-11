@@ -14,7 +14,7 @@ A GitHub Action that generates comprehensive license information for npm depende
 
 ```yaml
 - name: Generate Open Source Licenses
-  uses: VlinderSoftware/generate-licenses@v1
+  uses: vln-devsecops/actions-generate-licenses@v1
   with:
     working-directory: 'frontend'
     node-version: '22'
@@ -71,7 +71,7 @@ jobs:
         working-directory: frontend
         
       - name: Generate Open Source Licenses
-        uses: VlinderSoftware/generate-licenses@v1
+        uses: vln-devsecops/actions-generate-licenses@v1
         with:
           working-directory: 'frontend'
           
@@ -92,7 +92,7 @@ The action generates an HTML page using a Jinja2 template. You can customize the
    cp node_modules/@vlindersoftware/generate-licenses/templates/licenses.html.j2 licenses.html.j2
    
    # Or download from GitHub
-   curl -o licenses.html.j2 https://raw.githubusercontent.com/VlinderSoftware/generate-licenses/main/templates/licenses.html.j2
+   curl -o licenses.html.j2 https://raw.githubusercontent.com/vln-devsecops/actions-generate-licenses/v1/templates/licenses.html.j2
    ```
 
 2. **Customize the template** to match your application's styling
