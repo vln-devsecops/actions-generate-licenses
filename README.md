@@ -92,7 +92,7 @@ The action generates an HTML page using a Jinja2 template. You can customize the
    cp node_modules/@vlindersoftware/generate-licenses/templates/licenses.html.j2 licenses.html.j2
    
    # Or download from GitHub
-   curl -o licenses.html.j2 https://raw.githubusercontent.com/vln-devsecops/actions-generate-licenses/main/templates/licenses.html.j2
+   curl -o licenses.html.j2 https://raw.githubusercontent.com/vln-devsecops/actions-generate-licenses/v1/templates/licenses.html.j2
    ```
 
 2. **Customize the template** to match your application's styling
