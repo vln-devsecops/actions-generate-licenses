@@ -89,7 +89,7 @@ The action generates an HTML page using a Jinja2 template. You can customize the
 1. **Copy the default template to your project:**
    ```bash
    # If using the npm package
-   cp node_modules/@vlindersoftware/generate-licenses/templates/licenses.html.j2 licenses.html.j2
+   cp node_modules/@vln-devsecops/generate-licenses/templates/licenses.html.j2 licenses.html.j2
    
    # Or download from GitHub
    curl -o licenses.html.j2 https://raw.githubusercontent.com/vln-devsecops/actions-generate-licenses/v1/templates/licenses.html.j2
