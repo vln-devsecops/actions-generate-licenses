@@ -5,9 +5,14 @@ on:
     branches:
       - main
 
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   release-please:
@@ -28,7 +33,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -42,7 +47,7 @@ jobs:
           MAJOR="${TAG%%.*}"
           MINOR="${TAG%.*}"
 
-          git tag -fa "$MAJOR" -m "Release $TAG" "$TAG"
-          git tag -fa "$MINOR" -m "Release $TAG" "$TAG"
+          git tag -fa "$MAJOR" -m "Release $TAG" "${TAG}^{}"
+          git tag -fa "$MINOR" -m "Release $TAG" "${TAG}^{}"
 
           git push origin "refs/tags/$MAJOR" "refs/tags/$MINOR" --force
