@@ -27,12 +27,11 @@ jobs:
     name: Rebuild dist folder
     runs-on: ubuntu-latest
 
-    # Only run on dependency updates or script changes
-    if: |
-      contains(github.event.head_commit.message, 'npm') ||
-      contains(github.event.head_commit.message, 'dependency') ||
-      contains(github.event.head_commit.message, 'bump') ||
-      github.actor == 'dependabot[bot]'
+    # No further filtering needed here: on.push.paths above already restricts
+    # this workflow to runs where package.json, package-lock.json, or
+    # scripts/** changed. An additional commit-message check would just skip
+    # legitimate script changes whose commit message doesn't happen to
+    # mention npm/dependency/bump.
 
     steps:
       - name: Checkout code
