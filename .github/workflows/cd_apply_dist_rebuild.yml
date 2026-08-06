@@ -1,0 +1,105 @@
+---
+name: cd_apply_dist_rebuild
+
+# Applies the dist/ artifact built by ci_prepare_dist_artifact.yml back onto
+# the originating PR branch, using DEPENDABOT_AUTOMERGE_TOKEN so the push
+# retriggers pull_request-triggered workflows on the new commit. A
+# GITHUB_TOKEN push would not - GitHub suppresses that unconditionally to
+# prevent workflow-triggering loops, regardless of what write permissions
+# GITHUB_TOKEN otherwise has in this repo. That's also why this can't just be
+# a step appended to ci_prepare_dist_artifact.yml's job: retriggering
+# ci_validate_action.yml and ci_dependabot_automerge.yml against the rebuilt
+# commit is the entire point, so the merge gate ends up evaluating the
+# commit that's actually about to be merged instead of the stale pre-rebuild
+# one.
+#
+# This job never checks out or executes anything from the PR: it downloads
+# already-built files from the artifact and copies them onto a checkout of
+# the base repo, using only trusted (this file's own, default-branch)
+# instructions. That split is what makes it safe to hold a privileged token
+# here at all - see ci_prepare_dist_artifact.yml for why that job can't.
+#
+# workflow_run runs using this file's version on the default branch, not
+# whatever might be on the PR branch, so a Dependabot PR can't tamper with
+# this job by editing the workflow file itself.
+
+on:
+  workflow_run:
+    workflows: ["ci_prepare_dist_artifact"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    steps:
+      # Belt-and-suspenders on top of ci_prepare_dist_artifact.yml's own
+      # author check: re-verify from the API rather than trust the
+      # workflow_run payload's pull_requests array, since this job is the one
+      # holding a privileged token.
+      - name: Resolve PR and verify author
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          number=$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")
+          if [ -z "$number" ]; then
+            echo "::error::No pull request associated with this workflow_run; refusing to proceed"
+            exit 1
+          fi
+          author=$(gh api "repos/$REPO/pulls/$number" --jq .user.login)
+          if [ "$author" != "dependabot[bot]" ]; then
+            echo "::error::PR #$number author is '$author', not dependabot[bot]; refusing to push"
+            exit 1
+          fi
+          branch=$(gh api "repos/$REPO/pulls/$number" --jq .head.ref)
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN }}
+          ref: ${{ steps.pr.outputs.branch }}
+          fetch-depth: 0
+
+      # Cleared first: download-artifact extracts on top of what's there but
+      # never deletes, so a rebuild that removes a dist/ file would otherwise
+      # leave the stale copy behind and never actually match the artifact.
+      - name: Clear existing dist
+        run: rm -rf dist/
+
+      # Downloads from the completed ci_prepare_dist_artifact.yml run, not
+      # this run - artifacts don't carry across workflow runs automatically.
+      # No artifact exists if dist/ was already current there; this step
+      # then fails, which is why it's allowed to fail without failing the job.
+      - name: Download rebuilt dist artifact
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-rebuild
+          path: dist/
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Commit and push rebuilt dist
+        if: steps.download.outcome == 'success'
+        run: |
+          set -euo pipefail
+          git add dist/
+          if git diff --cached --quiet; then
+            echo "Downloaded artifact matches the current branch state; nothing to push"
+            exit 0
+          fi
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git commit -m "chore: rebuild dist for Dependabot PR #${{ steps.pr.outputs.number }}"
+          git push origin HEAD:${{ steps.pr.outputs.branch }}
