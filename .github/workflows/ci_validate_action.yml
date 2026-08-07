@@ -10,6 +10,19 @@ on:
       - main
       - 'release/v*'
 
+# Default to read-only: audit and validate both run npm ci/npm run build
+# against PR-proposed code (pull_request events include Dependabot's), and
+# this repo's GITHUB_TOKEN is write-capable by default org/repo setting - it
+# is NOT forced read-only for pull_request events the way custom secrets are.
+# Running untrusted install/build scripts while holding a write token would
+# let a malicious postinstall script push to the repo directly. The one step
+# that legitimately needs to push (committing a rebuilt dist/ after a direct
+# push to main/release) is split into its own job below, which only runs for
+# push events - i.e. only after code has already landed on a protected
+# branch, never against an unmerged PR proposal.
+permissions:
+  contents: read
+
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -35,6 +48,8 @@ jobs:
 
   validate:
     runs-on: ubuntu-latest
+    outputs:
+      dist_stale: ${{ steps.dist_check.outputs.stale }}
 
     steps:
       - name: Checkout code
@@ -89,16 +104,44 @@ jobs:
             git diff --cached --stat -- dist/
           fi
 
-      - name: Commit updated dist
-        if: steps.dist_check.outputs.stale == 'true' && github.event_name == 'push'
-        run: |
-          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git commit -m "chore: rebuild dist"
-          git push
-
       - name: Fail if dist is stale on pull request
         if: steps.dist_check.outputs.stale == 'true' && github.event_name == 'pull_request'
         run: |
           echo "::error::dist/ is stale. Run 'npm run build' locally with Node.js $(node --version) and commit the result before merging."
           exit 1
+
+  # Split from `validate` so the write-capable token is only ever present
+  # once code is already on a protected branch (push event), never while
+  # building an unmerged PR's proposed code.
+  commit-dist:
+    needs: validate
+    if: needs.validate.outputs.dist_stale == 'true' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild dist folder
+        run: npm run build
+
+      - name: Commit updated dist
+        run: |
+          git add dist/
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git commit -m "chore: rebuild dist"
+          git push origin HEAD:${{ github.ref_name }}

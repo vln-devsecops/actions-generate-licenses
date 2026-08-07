@@ -1,0 +1,79 @@
+---
+name: ci_prepare_dist_artifact
+
+# Builds dist/ against a Dependabot PR's proposed dependency versions and
+# uploads the result as an artifact. It never touches DEPENDABOT_AUTOMERGE_TOKEN
+# or any other secret - npm ci && npm run build here executes code from
+# whatever the PR just bumped (this build literally requires @vercel/ncc to
+# produce dist/, and that's one of the packages Dependabot bumps), so no
+# privileged token can be present while this job runs.
+#
+# cd_apply_dist_rebuild.yml is the other half of this pair: it holds
+# DEPENDABOT_AUTOMERGE_TOKEN but only moves the files this job already built
+# onto the branch - it never executes anything from the PR. Splitting build
+# (untrusted, no secrets) from publish (trusted, no PR code execution) is
+# what makes it safe to auto-fix a stale dist/ on a Dependabot PR at all.
+# See operations#42 / guidance's dependabot-automerge runbook for why the
+# combined version of this (rebuild-dist.yml's old pull_request trigger) was
+# a real hazard even though this repo's org settings happen to let
+# GITHUB_TOKEN write here: a GITHUB_TOKEN push doesn't retrigger workflow
+# runs, so nothing would have re-validated the rebuilt commit anyway.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # PR author, not github.actor - consistent with ci_dependabot_automerge.yml
+    # and for the same reason: github.actor is whoever triggered the specific
+    # event, not who opened the PR.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild dist folder
+        run: npm run build
+
+      - name: Check for dist changes
+        id: dist-changes
+        run: |
+          set -euo pipefail
+          git add dist/
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "dist/ is already up to date"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --cached --stat
+          fi
+
+      # No artifact is uploaded when dist/ is already current, so
+      # cd_apply_dist_rebuild.yml has nothing to download and pushes nothing.
+      - name: Upload rebuilt dist
+        if: steps.dist-changes.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-rebuild
+          path: dist/
+          retention-days: 1

@@ -1,15 +1,16 @@
 name: Rebuild Distribution
 
+# pull_request no longer triggers this: rebuilding dist/ against a Dependabot
+# PR's proposed dependency versions and pushing the result requires a token
+# that (a) can retrigger workflows on the push, so the merge gate evaluates
+# the rebuilt commit, and (b) is never present while dist/ is being built
+# from those same untrusted proposed versions. Splitting those two concerns
+# is what ci_prepare_dist_artifact.yml + cd_apply_dist_rebuild.yml do instead
+# - see the comments in those files. This workflow now only handles direct
+# pushes to main/release branches, which aren't PR-controlled content.
+
 on:
   push:
-    branches:
-      - main
-      - 'release/v*'
-    paths:
-      - 'package.json'
-      - 'package-lock.json'
-      - 'scripts/**'
-  pull_request:
     branches:
       - main
       - 'release/v*'
@@ -25,15 +26,12 @@ jobs:
   rebuild-dist:
     name: Rebuild dist folder
     runs-on: ubuntu-latest
-    
-    # Only run on dependency updates or script changes
-    if: |
-      (github.event_name == 'push' && 
-       (contains(github.event.head_commit.message, 'npm') || 
-        contains(github.event.head_commit.message, 'dependency') ||
-        contains(github.event.head_commit.message, 'bump') ||
-        github.actor == 'dependabot[bot]')) ||
-      (github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')
+
+    # No further filtering needed here: on.push.paths above already restricts
+    # this workflow to runs where package.json, package-lock.json, or
+    # scripts/** changed. An additional commit-message check would just skip
+    # legitimate script changes whose commit message doesn't happen to
+    # mention npm/dependency/bump.
 
     steps:
       - name: Checkout code
@@ -77,9 +75,8 @@ jobs:
           - Rebuilt dist folder to include latest dependencies
           - Triggered by: ${{ github.event_name }}
           - Actor: ${{ github.actor }}"
-          
-          # Push to the current branch (use head_ref on PRs, ref_name on direct pushes)
-          git push origin HEAD:${{ github.head_ref || github.ref_name }}
+
+          git push origin HEAD:${{ github.ref_name }}
 
       - name: Summary
         run: |
