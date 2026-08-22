@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.12](https://github.com/vln-devsecops/actions-generate-licenses/compare/v1.2.11...v1.2.12) (2026-08-22)
+
+
+### Bug Fixes
+
+* gate automerge on CI, split dist rebuild from the privileged push ([#17](https://github.com/vln-devsecops/actions-generate-licenses/issues/17)) ([3a225ca](https://github.com/vln-devsecops/actions-generate-licenses/commit/3a225cacfc1215c8f42f4c3e91fc5ff44d5311e6))
+* preserve executable bit when applying rebuilt dist to Dependabot PRs ([#33](https://github.com/vln-devsecops/actions-generate-licenses/issues/33)) ([c1caca7](https://github.com/vln-devsecops/actions-generate-licenses/commit/c1caca7d0b6bdc349a2ce872748c85f313d09166))
+
 ## [1.2.11](https://github.com/vln-devsecops/actions-generate-licenses/compare/v1.2.10...v1.2.11) (2026-07-09)
 
 
