@@ -72,7 +72,7 @@ jobs:
       # cd_apply_dist_rebuild.yml has nothing to download and pushes nothing.
       - name: Upload rebuilt dist
         if: steps.dist-changes.outputs.changed == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-rebuild
           path: dist/
