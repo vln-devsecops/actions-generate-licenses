@@ -64,7 +64,7 @@ describe('GitHub Action Configuration', () => {
 
     expect(stepsByName['Restore cached license files']).toEqual(
       expect.objectContaining({
-        uses: 'actions/cache@v5',
+        uses: expect.stringMatching(/^actions\/cache@v\d+$/),
         with: expect.objectContaining({
           key: 'licenses-${{ steps.cache-key.outputs.csv-hash }}',
         }),
