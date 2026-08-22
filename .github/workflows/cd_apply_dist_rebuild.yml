@@ -83,7 +83,7 @@ jobs:
       - name: Download rebuilt dist artifact
         id: download
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist-rebuild
           path: dist/
