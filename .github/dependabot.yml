@@ -8,11 +8,6 @@ updates:
     target-branch: "main"
     open-pull-requests-limit: 10
     versioning-strategy: "increase-if-necessary"
-    ignore:
-      # Ignore major version updates to prevent breaking changes
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-    
   # Enable version updates for npm on dev branch (if it exists)
   - package-ecosystem: "npm"
     directory: "/"
@@ -21,11 +16,6 @@ updates:
     target-branch: "dev"
     open-pull-requests-limit: 10
     versioning-strategy: "increase-if-necessary"
-    ignore:
-      # Ignore major version updates to prevent breaking changes
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-    
   # Enable version updates for GitHub Actions on main branch
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -33,11 +23,6 @@ updates:
       interval: "weekly"
     target-branch: "main"
     open-pull-requests-limit: 10
-    ignore:
-      # Ignore major version updates to prevent breaking changes
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-
   # Enable version updates for GitHub Actions on dev branch (if it exists)
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -45,7 +30,3 @@ updates:
       interval: "weekly"
     target-branch: "dev"
     open-pull-requests-limit: 10
-    ignore:
-      # Ignore major version updates to prevent breaking changes
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
