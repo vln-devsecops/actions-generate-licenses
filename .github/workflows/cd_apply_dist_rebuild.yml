@@ -90,6 +90,19 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
 
+      # actions/upload-artifact and actions/download-artifact do not
+      # preserve the executable bit `npm run build` sets on these files:
+      # each dist/*/index.cjs is a standalone ncc bundle with a
+      # `#!/usr/bin/env node` shebang, and ncc emits it as mode 755. Without
+      # restoring that here, this step commits the file at mode 644, and the
+      # next `validate` run's own `npm run build` (always 755, straight from
+      # ncc, no artifact round-trip) diffs against that as a mode-only
+      # change - so `ci_validate_action.yml` reports dist/ as permanently
+      # stale even though the content already matches. See PR #19.
+      - name: Restore executable bit lost by the artifact round-trip
+        if: steps.download.outcome == 'success'
+        run: chmod +x dist/*/index.cjs
+
       - name: Commit and push rebuilt dist
         if: steps.download.outcome == 'success'
         run: |
