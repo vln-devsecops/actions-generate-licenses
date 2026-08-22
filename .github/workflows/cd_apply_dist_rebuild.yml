@@ -64,7 +64,7 @@ jobs:
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
 
       - name: Checkout PR branch
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN }}
           ref: ${{ steps.pr.outputs.branch }}
