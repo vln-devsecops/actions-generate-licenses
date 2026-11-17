@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/vln-devsecops/actions-generate-licenses/compare/v1.2.12...v1.3.0) (2026-11-17)
+
+
+### Features
+
+* **action:** default to Node.js 24 ([#45](https://github.com/vln-devsecops/actions-generate-licenses/issues/45)) ([05e4341](https://github.com/vln-devsecops/actions-generate-licenses/commit/05e4341e475d1b45d91f3b4d77ca29d8ccc27154))
+
 ## [1.2.12](https://github.com/vln-devsecops/actions-generate-licenses/compare/v1.2.11...v1.2.12) (2026-08-22)
 
 
