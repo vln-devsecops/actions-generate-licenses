@@ -4,11 +4,9 @@ on:
   push:
     branches:
       - main
-      - 'release/v*'
   pull_request:
     branches:
       - main
-      - 'release/v*'
 
 # Default to read-only: audit and validate both run npm ci/npm run build
 # against PR-proposed code (pull_request events include Dependabot's), and
@@ -17,7 +15,7 @@ on:
 # Running untrusted install/build scripts while holding a write token would
 # let a malicious postinstall script push to the repo directly. The one step
 # that legitimately needs to push (committing a rebuilt dist/ after a direct
-# push to main/release) is split into its own job below, which only runs for
+# push to main) is split into its own job below, which only runs for
 # push events - i.e. only after code has already landed on a protected
 # branch, never against an unmerged PR proposal.
 permissions:

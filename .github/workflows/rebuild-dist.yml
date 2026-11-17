@@ -7,13 +7,12 @@ name: Rebuild Distribution
 # from those same untrusted proposed versions. Splitting those two concerns
 # is what ci_prepare_dist_artifact.yml + cd_apply_dist_rebuild.yml do instead
 # - see the comments in those files. This workflow now only handles direct
-# pushes to main/release branches, which aren't PR-controlled content.
+# pushes to main, which aren't PR-controlled content.
 
 on:
   push:
     branches:
       - main
-      - 'release/v*'
     paths:
       - 'package.json'
       - 'package-lock.json'

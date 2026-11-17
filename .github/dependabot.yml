@@ -8,14 +8,6 @@ updates:
     target-branch: "main"
     open-pull-requests-limit: 10
     versioning-strategy: "increase-if-necessary"
-  # Enable version updates for npm on dev branch (if it exists)
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    target-branch: "dev"
-    open-pull-requests-limit: 10
-    versioning-strategy: "increase-if-necessary"
   # Enable version updates for GitHub Actions on main branch
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -23,10 +15,4 @@ updates:
       interval: "weekly"
     target-branch: "main"
     open-pull-requests-limit: 10
-  # Enable version updates for GitHub Actions on dev branch (if it exists)
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    target-branch: "dev"
     open-pull-requests-limit: 10
