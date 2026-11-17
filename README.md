@@ -17,7 +17,7 @@ A GitHub Action that generates comprehensive license information for npm depende
   uses: vln-devsecops/actions-generate-licenses@v1
   with:
     working-directory: 'frontend'
-    node-version: '22'
+    node-version: '24'
 ```
 
 ## Inputs
@@ -25,7 +25,7 @@ A GitHub Action that generates comprehensive license information for npm depende
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `working-directory` | Directory containing package.json (e.g., frontend) | Yes | - |
-| `node-version` | Node.js version to use | No | `22` |
+| `node-version` | Node.js version to use | No | `24` |
 
 ## What it does
 

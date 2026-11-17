@@ -19,7 +19,7 @@ describe('GitHub Action Configuration', () => {
       expect.objectContaining({ required: true })
     );
     expect(actionConfig.inputs['node-version']).toEqual(
-      expect.objectContaining({ default: '22' })
+      expect.objectContaining({ default: '24' })
     );
     expect(actionConfig.inputs['fail-on-unknown']).toEqual(
       expect.objectContaining({ default: 'false' })
